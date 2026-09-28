@@ -192,6 +192,9 @@ async def test_decode_quote_frame_normalises():
                 "ltp": "1523.45",
                 "v": "42",
                 "ltt": "1700000000",
+                "seq": 28,
+                "bp": "1523.4",
+                "sp": "1523.5",
             }
         )
     )
@@ -199,6 +202,7 @@ async def test_decode_quote_frame_normalises():
     q = quotes[0]
     assert isinstance(q, Quote)
     assert (q.symbol, q.exchange, q.price, q.volume) == ("TCS", "nse_cm", 1523.45, 42.0)
+    assert (q.instrument_token, q.sequence, q.bid, q.ask) == ("11536", 28, 1523.4, 1523.5)
     assert q.ts == datetime.fromtimestamp(1_700_000_000, tz=timezone.utc)
 
 

@@ -245,6 +245,7 @@ async def test_provider_decode_frame_maps_to_quote_and_caches_ohlc():
     q = quotes[0]
     assert isinstance(q, Quote)
     assert (q.symbol, q.price, q.volume) == ("BANKNIFTY", 52200.2, 88888.0)
+    assert q.instrument_token == BANKNIFTY_KEY
     assert q.ts == datetime.fromtimestamp(1_700_000_001, tz=timezone.utc)
     assert p.latest_ohlc("BANKNIFTY")["1d"].close == 52200.0
 

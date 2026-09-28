@@ -29,6 +29,7 @@ from app.core.exceptions import (
 from app.core.logging import get_logger
 from app.db.session import get_db
 from app.engine.market_data.base import Quote
+from app.monitoring.metrics import metrics
 from app.ws.protocol import ack_frame, error_frame, frame, parse_client_message
 from app.ws.quote_broadcaster import quote_broadcaster
 from app.ws.rate_limit import default_bucket
@@ -73,17 +74,15 @@ async def quotes_ws(ws: WebSocket, db: AsyncSession = Depends(get_db)) -> None:
         return
 
     # ---- Live market-data safety gate (fail closed) -------------------
-    # The broadcaster only ever emits deterministic MOCK ticks. When a real
-    # provider is configured we MUST NOT fan those out as if they were live —
-    # refuse the stream with a clear error and application close code 4503
-    # instead of degrading to mock. Mock streaming stays available only when
-    # MARKET_DATA_PROVIDER=mock (dev preview / testing).
-    if not _provider_is_mock():
+    # The chart may use mock data only in explicit mock mode. Real mode may
+    # attach only to this user's already-running strategy provider; it never
+    # opens a chart-specific broker connection or falls back to mock.
+    await quote_broadcaster.start()
+    if not _provider_is_mock() and not quote_broadcaster.has_real_provider(user.id):
         await ws.send_json(
             error_frame(
                 "market_data_provider_unavailable",
-                "Live market-data streaming is unavailable for the configured "
-                "provider; refusing to emit mock ticks.",
+                "No active real market-data stream is available for this user.",
             )
         )
         await ws.close(code=CLOSE_PROVIDER_UNAVAILABLE)
@@ -94,27 +93,31 @@ async def quotes_ws(ws: WebSocket, db: AsyncSession = Depends(get_db)) -> None:
         return
 
     # ---- Register with the broadcaster --------------------------------
-    await quote_broadcaster.start()
     client_id = id(ws)
-    queue = await quote_broadcaster.connect(client_id)
+    queue = await quote_broadcaster.connect(client_id, user_id=user.id)
     bucket = default_bucket()
     logger.info("ws_quotes_connect", extra={"user_id": user.id, "client_id": client_id})
 
     async def _sender() -> None:
         while True:
             quote: Quote = await queue.get()
-            await ws.send_json(
-                frame(
-                    "quote",
-                    {
-                        "symbol": quote.symbol,
-                        "exchange": quote.exchange,
-                        "price": float(quote.price),
-                        "volume": float(quote.volume),
-                        "ts": quote.ts.isoformat() if isinstance(quote.ts, datetime) else quote.ts,
-                    },
-                )
-            )
+            payload = {
+                "symbol": quote.symbol,
+                "exchange": quote.exchange,
+                "price": float(quote.price),
+                "volume": float(quote.volume),
+                "ts": quote.ts.isoformat() if isinstance(quote.ts, datetime) else quote.ts,
+            }
+            for field in ("instrument_token", "sequence", "bid", "ask"):
+                value = getattr(quote, field, None)
+                if value is not None:
+                    payload[field] = value
+            try:
+                await ws.send_json(frame("quote", payload))
+                metrics.record_market_data("quote_ticks_sent")
+            except Exception:
+                metrics.record_market_data("quote_ticks_dropped")
+                raise
 
     async def _receiver() -> None:
         while True:

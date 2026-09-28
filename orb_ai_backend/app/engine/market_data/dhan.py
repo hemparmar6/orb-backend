@@ -173,6 +173,10 @@ class DhanMarketDataProvider(BrokerWSMarketDataProvider):
                 price=price,
                 volume=volume,
                 ts=ts,
+                instrument_token=security_id,
+                sequence=_optional_sequence(raw),
+                bid=_optional_float(raw, "bid", "bidPrice", "bidP"),
+                ask=_optional_float(raw, "ask", "askPrice", "askP"),
             )
         ]
 
@@ -185,3 +189,20 @@ def _parse_timestamp(value: Any) -> datetime:
     if ts > 1e12:
         ts = ts / 1000.0
     return datetime.fromtimestamp(ts, tz=timezone.utc)
+
+
+def _optional_sequence(raw: dict[str, Any]) -> int | str | None:
+    for key in ("sequence", "sequenceNumber", "seq"):
+        if raw.get(key) is not None:
+            return raw[key]
+    return None
+
+
+def _optional_float(raw: dict[str, Any], *keys: str) -> float | None:
+    for key in keys:
+        if raw.get(key) is not None:
+            try:
+                return float(raw[key])
+            except (TypeError, ValueError):
+                return None
+    return None

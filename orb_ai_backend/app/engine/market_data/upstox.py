@@ -282,6 +282,7 @@ class UpstoxMarketDataProvider(BrokerWSMarketDataProvider):
                     price=float(tick.ltp),
                     volume=float(tick.volume),
                     ts=ts,
+                    instrument_token=tick.instrument_key,
                 )
             )
         return quotes

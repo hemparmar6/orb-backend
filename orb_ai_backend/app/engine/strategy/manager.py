@@ -159,6 +159,10 @@ class StrategyManager:
                     provider_kwargs=provider_kwargs,
                 )
             await provider.start()
+            if mode == "live":
+                from app.ws.quote_broadcaster import quote_broadcaster
+
+                quote_broadcaster.attach_provider(provider, user_id)
 
             runner = EngineRunner(
                 engine_session_id=session.id,
@@ -241,6 +245,10 @@ class StrategyManager:
             )
 
             await provider.start()
+            if mode == "live":
+                from app.ws.quote_broadcaster import quote_broadcaster
+
+                quote_broadcaster.attach_provider(provider, session.user_id)
 
             runner = EngineRunner(
                 engine_session_id=session.id,
@@ -363,6 +371,9 @@ class StrategyManager:
                     except (asyncio.CancelledError, Exception):
                         pass
                 try:
+                    from app.ws.quote_broadcaster import quote_broadcaster
+
+                    quote_broadcaster.detach_provider(handle.provider)
                     await handle.provider.stop()
                 except Exception:  # pragma: no cover
                     pass

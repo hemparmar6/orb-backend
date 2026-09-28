@@ -118,6 +118,9 @@ async def test_decode_ticker_frame_normalises_to_quote():
             "LTP": 1523.45,
             "LTQ": 10,
             "LTT": 1_700_000_000,
+            "sequence": 27,
+            "bidP": 1523.4,
+            "askP": 1523.5,
         }
     )
     quotes = p._decode_frame(frame)
@@ -125,6 +128,7 @@ async def test_decode_ticker_frame_normalises_to_quote():
     q = quotes[0]
     assert isinstance(q, Quote)
     assert (q.symbol, q.exchange, q.price, q.volume) == ("TCS", "NSE_EQ", 1523.45, 10.0)
+    assert (q.instrument_token, q.sequence, q.bid, q.ask) == ("11536", 27, 1523.4, 1523.5)
     assert q.ts == datetime.fromtimestamp(1_700_000_000, tz=timezone.utc)
 
 

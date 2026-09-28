@@ -29,12 +29,13 @@ from __future__ import annotations
 import asyncio
 from abc import abstractmethod
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Iterable, Optional
+from typing import Any, AsyncIterator, Callable, Iterable, Optional
 
 from app.brokers.websocket.reconnect import ReconnectingWSClient
 from app.core.exceptions import EngineError
 from app.core.logging import get_logger
 from app.engine.market_data.base import MarketDataProvider, Quote
+from app.monitoring.metrics import metrics
 
 logger = get_logger(__name__)
 
@@ -92,6 +93,9 @@ class BrokerWSMarketDataProvider(MarketDataProvider):
         self._snapshot_cache: dict[tuple[str, str], Quote] = {}
 
         self._queue: asyncio.Queue[Quote] = asyncio.Queue(maxsize=queue_maxsize)
+        # Observers receive decoded ticks without consuming the strategy queue
+        # or opening another broker WebSocket connection.
+        self._quote_listeners: set[Callable[[Quote], None]] = set()
         self._client: Optional[ReconnectingWSClient] = None
         self._consumer_task: Optional[asyncio.Task] = None
         self._running = False
@@ -278,6 +282,13 @@ class BrokerWSMarketDataProvider(MarketDataProvider):
                 continue
             yield q
 
+    def add_quote_listener(self, listener: Callable[[Quote], None]) -> None:
+        """Observe each accepted decoded tick alongside the stream consumer."""
+        self._quote_listeners.add(listener)
+
+    def remove_quote_listener(self, listener: Callable[[Quote], None]) -> None:
+        self._quote_listeners.discard(listener)
+
     async def snapshot(self, symbol: str, exchange: str = "") -> Quote | None:
         exch = exchange or self.default_exchange
         return self._snapshot_cache.get((symbol, exch))
@@ -375,6 +386,12 @@ class BrokerWSMarketDataProvider(MarketDataProvider):
             return
         self._snapshot_cache[key] = quote
         self._stats["ticks_received"] += 1
+        metrics.record_market_data("broker_ticks_received")
+        for listener in tuple(self._quote_listeners):
+            try:
+                listener(quote)
+            except Exception:
+                logger.exception("market_data_quote_listener_failed", extra={"provider": self.name})
         # Latency: ts is the exchange timestamp, now is process time.
         try:
             now = datetime.now(timezone.utc)
@@ -393,3 +410,4 @@ class BrokerWSMarketDataProvider(MarketDataProvider):
             self._queue.put_nowait(quote)
         except asyncio.QueueFull:
             self._stats["ticks_dropped_full_queue"] += 1
+            metrics.record_market_data("quote_ticks_dropped")

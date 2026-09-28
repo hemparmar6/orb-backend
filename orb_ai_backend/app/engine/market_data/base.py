@@ -32,6 +32,10 @@ class Quote:
     price: float
     volume: float
     ts: datetime  # timezone-aware UTC
+    instrument_token: str | None = None
+    sequence: int | str | None = None
+    bid: float | None = None
+    ask: float | None = None
 
 
 @dataclass(frozen=True, slots=True)

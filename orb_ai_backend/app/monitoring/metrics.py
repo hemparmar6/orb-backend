@@ -39,6 +39,12 @@ class MetricsCollector:
         # Auth-related counters
         self.auth_success: int = 0
         self.auth_failures: int = 0
+        self.market_data_counters: dict[str, int] = {
+            "broker_ticks_received": 0,
+            "quote_ticks_forwarded": 0,
+            "quote_ticks_sent": 0,
+            "quote_ticks_dropped": 0,
+        }
 
     # ------------------------------------------------------------------ record
 
@@ -66,6 +72,12 @@ class MetricsCollector:
                 self.auth_success += 1
             else:
                 self.auth_failures += 1
+
+    def record_market_data(self, name: str, amount: int = 1) -> None:
+        if name not in self.market_data_counters or amount <= 0:
+            return
+        with self._lock:
+            self.market_data_counters[name] += amount
 
     # ------------------------------------------------------------------ read
 
@@ -105,6 +117,7 @@ class MetricsCollector:
                 "rate_limit_hits": self.rate_limit_hits,
                 "auth_success": self.auth_success,
                 "auth_failures": self.auth_failures,
+                **self.market_data_counters,
                 "status_buckets": dict(self.status_buckets),
                 "endpoints": per_endpoint,
             }
@@ -132,6 +145,9 @@ class MetricsCollector:
             "# TYPE orb_ai_uptime_seconds gauge",
             f'orb_ai_uptime_seconds {snap["uptime_s"]}',
         ]
+        for name in self.market_data_counters:
+            metric_name = f"orb_ai_{name}_total"
+            lines.extend((f"# HELP {metric_name} {name.replace('_', ' ')}", f"# TYPE {metric_name} counter", f"{metric_name} {snap[name]}"))
         for bucket, count in snap["status_buckets"].items():
             lines.append(f'orb_ai_status_bucket_total{{bucket="{bucket}"}} {count}')
         return "\n".join(lines) + "\n"
