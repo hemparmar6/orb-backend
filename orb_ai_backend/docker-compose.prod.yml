@@ -1,0 +1,134 @@
+# Hardened Docker Compose for production self-hosted ORB AI backend.
+# Run with: docker compose -f docker-compose.prod.yml up -d --build
+#
+# Requires a .env file alongside this compose file (see .env.production.example).
+# Bind volumes for Postgres and Redis to survive container recreation.
+#
+# Ports intentionally bind ONLY to 127.0.0.1 for Postgres/Redis so they're
+# reachable only from the host / Nginx; the API service is bound to
+# 127.0.0.1:8000 and reverse-proxied via Nginx over TLS.
+
+name: orb_ai
+
+x-log: &default-log
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: orb_ai_postgres
+    restart: unless-stopped
+    logging: *default-log
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    volumes:
+      - orb_pg_data:/var/lib/postgresql/data
+    ports:
+      # Bind only to loopback — never expose Postgres to the internet.
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+    security_opt:
+      - no-new-privileges:true
+
+  redis:
+    image: redis:7-alpine
+    container_name: orb_ai_redis
+    restart: unless-stopped
+    logging: *default-log
+    command:
+      - "redis-server"
+      - "--appendonly"
+      - "yes"
+      - "--maxmemory"
+      - "256mb"
+      - "--maxmemory-policy"
+      - "allkeys-lru"
+      - "--requirepass"
+      - "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"
+    volumes:
+      - orb_redis_data:/data
+    ports:
+      - "127.0.0.1:${REDIS_HOST_PORT:-6379}:6379"
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping | grep PONG"
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    deploy:
+      resources:
+        limits:
+          memory: 384m
+    security_opt:
+      - no-new-privileges:true
+
+  api:
+    build:
+      context: ..                       # repo root, so admin-web/ is visible
+      dockerfile: orb_ai_backend/Dockerfile
+    image: orb_ai_api:${IMAGE_TAG:-latest}
+    container_name: orb_ai_api
+    restart: unless-stopped
+    logging: *default-log
+    env_file:
+      - .env
+    environment:
+      # Route the runtime at the compose-managed services (overrides .env if set).
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      DATABASE_URL: "postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}"
+      REDIS_URL: "redis://:${REDIS_PASSWORD}@redis:6379/0"
+      REDIS_ENABLED: "true"
+      ADMIN_SEED_ON_STARTUP: "${ADMIN_SEED_ON_STARTUP:-true}"
+      ADMIN_UI_DIST: "/app/admin_web_dist"
+      APP_ENV: "production"
+      DEBUG: "false"
+      LOG_JSON: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      # Nginx (on the host) reverse-proxies :443 → 127.0.0.1:8000.
+      - "127.0.0.1:${API_HOST_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+    security_opt:
+      - no-new-privileges:true
+    read_only: false  # entrypoint writes to /tmp; set true if you mount tmpfs
+    tmpfs:
+      - /tmp:size=64m
+
+volumes:
+  orb_pg_data:
+    driver: local
+  orb_redis_data:
+    driver: local

@@ -1,0 +1,67 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: orb_ai_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-orb}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-orb}
+      POSTGRES_DB: ${POSTGRES_DB:-orb_ai}
+    volumes:
+      - orb_pg_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-orb} -d ${POSTGRES_DB:-orb_ai}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: orb_ai_redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - orb_redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: orb_ai_api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # ---- Module 9 (AI Trading Intelligence) — all OPTIONAL --------
+      # These fall through to .env; declared here so `docker compose config`
+      # shows every AI variable and to make it obvious what the container
+      # accepts. Missing values degrade gracefully to rule-based analytics.
+      AI_ENABLED: ${AI_ENABLED:-true}
+      AI_PROVIDER: ${AI_PROVIDER:-gpt52}
+      AI_MODEL: ${AI_MODEL:-gpt-5.2}
+      EMERGENT_LLM_KEY: ${EMERGENT_LLM_KEY:-}
+      AI_CACHE_TTL_S: ${AI_CACHE_TTL_S:-600}
+      AI_REQUEST_TIMEOUT_S: ${AI_REQUEST_TIMEOUT_S:-25}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      # Redis is optional for the API to boot; the engine treats it as best-effort.
+      redis:
+        condition: service_started
+    ports:
+      - "8000:8000"
+
+volumes:
+  orb_pg_data:
+    driver: local
+  orb_redis_data:
+    driver: local

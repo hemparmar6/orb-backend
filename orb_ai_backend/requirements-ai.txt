@@ -1,0 +1,21 @@
+# ORB AI — Optional AI provider dependencies (Module 9).
+#
+# These are OPTIONAL. When they are not installed, the AIService in
+# app/ai/service.py transparently degrades to the deterministic
+# rule-based provider (app/ai/providers/fallback.py) and every AI
+# endpoint keeps working.
+#
+# Install with:
+#
+#     pip install -r requirements-ai.txt
+#
+# `emergentintegrations` is fetched from the Emergent Universal-LLM
+# index. That's why it lives in this optional file — a plain
+# `pip install -r requirements.txt` on any clean machine (public PyPI
+# only) must succeed without touching this file.
+--extra-index-url https://d33sy5i8bnduwe.cloudfront.net/simple/
+
+emergentintegrations==0.2.2
+# Keep optional-provider resolution aligned with the backend's pinned core
+# validation/configuration stack when pip installs this file after requirements.txt.
+pydantic==2.10.3

@@ -1,0 +1,100 @@
+# --------------------------------------------------------------------
+# ORB AI — production Nginx reverse-proxy (TLS termination + rate limit)
+#
+# Symlink into /etc/nginx/sites-enabled/ and:
+#     nginx -t && systemctl reload nginx
+#
+# TLS certificates are managed by certbot / acme.sh (see deploy/ssl-tls.md).
+# --------------------------------------------------------------------
+
+# Cache the upstream health probe so /health does not become a hot loop.
+map $http_x_forwarded_for $proxy_client_ip {
+    ""      $remote_addr;
+    default $http_x_forwarded_for;
+}
+
+# ---- Basic DoS mitigation (in addition to the app-level limiter) ----
+limit_req_zone $binary_remote_addr zone=orb_api:10m rate=30r/s;
+limit_conn_zone $binary_remote_addr zone=orb_conn:10m;
+
+# ------------------------------------------------------------------- HTTP -> HTTPS
+server {
+    listen 80;
+    listen [::]:80;
+    server_name orb.example.com;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+# ------------------------------------------------------------------- HTTPS
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name orb.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/orb.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/orb.example.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers on;
+    ssl_ciphers HIGH:!aNULL:!MD5:!3DES;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+
+    # HSTS — enable AFTER confirming the cert is stable
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
+
+    # Client body — reports can be large PDFs, tune accordingly.
+    client_max_body_size 25m;
+    client_body_timeout 30s;
+    send_timeout 30s;
+
+    # ---- Static Admin SPA (served by the FastAPI container) ----
+    location /api/admin-ui/ {
+        proxy_pass         http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $proxy_client_ip;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+    }
+
+    # ---- API (rate-limited, no caching) ----
+    location /api/ {
+        limit_req  zone=orb_api burst=60 nodelay;
+        limit_conn orb_conn 40;
+
+        proxy_pass         http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $proxy_client_ip;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+
+        # WebSockets (order/quote/admin streams)
+        proxy_set_header   Upgrade    $http_upgrade;
+        proxy_set_header   Connection "upgrade";
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    # Liveness probe (no rate limit, no auth)
+    location = /health {
+        access_log off;
+        proxy_pass http://127.0.0.1:8000;
+    }
+
+    # Prometheus scrape (protect via internal-only firewall rule or basic auth)
+    location = /api/v1/monitoring/metrics/prometheus {
+        allow 10.0.0.0/8;
+        allow 172.16.0.0/12;
+        allow 192.168.0.0/16;
+        deny all;
+        proxy_pass http://127.0.0.1:8000;
+    }
+}

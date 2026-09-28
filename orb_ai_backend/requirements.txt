@@ -1,0 +1,60 @@
+# ORB AI — Backend core requirements (public production dependencies).
+#
+# Everything here installs from public PyPI. No private index required.
+#
+#     pip install -r requirements.txt
+#
+# Optional AI provider dependencies (Emergent Universal LLM key + GPT-5.2)
+# live in requirements-ai.txt and are installed separately. When the AI
+# extras are not installed, the AIService transparently degrades to the
+# deterministic rule-based provider and every AI endpoint keeps working.
+
+# ---- Runtime ----
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+pydantic==2.10.3
+pydantic-settings==2.7.0
+email-validator==2.2.0
+
+# ---- Database ----
+SQLAlchemy==2.0.36
+asyncpg==0.30.0
+alembic==1.14.0
+# aiosqlite is only used by the test suite for a fast in-memory DB
+aiosqlite==0.20.0
+
+# ---- Security ----
+passlib[bcrypt]==1.7.4
+bcrypt==4.0.1
+PyJWT==2.10.1
+cryptography==44.0.0
+
+# ---- Cache / queue (optional; engine runs without it) ----
+redis==5.2.1
+
+# ---- Logging ----
+python-json-logger==3.2.1
+
+# ---- Testing ----
+pytest==8.3.4
+pytest-asyncio==0.24.0
+httpx==0.28.1
+freezegun==1.5.1
+
+# ---- Misc ----
+python-multipart==0.0.19
+
+# ---- Payments (Razorpay primary, INR) ----
+razorpay==2.0.1
+stripe==13.0.0
+
+# ---- Module 8 ----
+reportlab==4.2.5
+aiosmtplib==3.0.2
+apscheduler==3.11.0
+
+# ---- Module 10 (Enterprise & Production) ----
+# boto3 is OPTIONAL — required only when BACKUP_S3_ENABLED=true.
+# If unavailable the backup service degrades gracefully to local-only.
+boto3==1.35.90
+qrcode==8.2

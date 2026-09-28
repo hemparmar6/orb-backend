@@ -1,0 +1,39 @@
+# Environment files and credentials
+.env
+.env.*
+!.env.example
+!.env.production.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# JavaScript / frontend builds
+node_modules/
+admin-web/dist/
+admin-web/coverage/
+
+# Local data, logs, and editor files
+*.sqlite
+*.sqlite3
+*.db
+*.log
+logs/
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

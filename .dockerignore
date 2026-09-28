@@ -1,0 +1,39 @@
+# Version control and local environments
+.git
+.gitignore
+.venv
+venv
+env
+**/.env
+**/.env.*
+**/secrets
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+
+# Python artifacts and test output
+**/__pycache__
+**/*.py[cod]
+**/.pytest_cache
+**/.mypy_cache
+**/.ruff_cache
+**/.coverage
+**/htmlcov
+**/test_reports
+**/tests
+
+# Frontend local dependencies/build output
+admin-web/node_modules
+admin-web/dist
+admin-web/coverage
+
+# IDE / OS / local runtime data
+**/.vscode
+**/.idea
+**/*.sqlite
+**/*.sqlite3
+**/*.db
+**/*.log
+.DS_Store
+Thumbs.db
